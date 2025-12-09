@@ -82,8 +82,8 @@ async def parse_www_authenticate(header: str):
             info[key] = match.group(1)
     return info
 
-async def get_upstream_token(realm: str, service: str, scope: str, username: str, password: str) -> str:
-    """Fetch Bearer token from upstream realm using provided credentials."""
+async def get_upstream_token(realm: str, service: str, scope: str, username: str = None, password: str = None) -> str:
+    """Fetch Bearer token from upstream realm using provided credentials (or anonymously)."""
     params = {}
     if service:
         params["service"] = service
@@ -91,9 +91,15 @@ async def get_upstream_token(realm: str, service: str, scope: str, username: str
         params["scope"] = scope
     
     try:
-        logger.info(f"Fetching token from {realm} for user {username} scope={scope}")
+        if username and password:
+            logger.info(f"Fetching token from {realm} for user {username} scope={scope}")
+            auth_kwargs = {"auth": (username, password)}
+        else:
+            logger.info(f"Fetching anonymous token from {realm} scope={scope}")
+            auth_kwargs = {}
+
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(realm, params=params, auth=(username, password))
+            resp = await client.get(realm, params=params, **auth_kwargs)
             if resp.status_code == 200:
                 data = resp.json()
                 return data.get("token") or data.get("access_token")
@@ -144,8 +150,8 @@ async def proxy_v2(path: str, request: Request):
         # First attempt (Transparency / or client's own Auth)
         r = await send_request(upstream_url, headers, content)
         
-        # Check for 401 and if we have credentials to fix it AUTOMATICALLY
-        if r.status_code == 401 and proxy_node.username and proxy_node.password:
+        # Check for 401 and if we can attempt auto-auth (either with stored creds OR anonymous)
+        if r.status_code == 401:
             auth_header = r.headers.get("www-authenticate")
             if auth_header and "Bearer" in auth_header:
                 # Close previous stream
