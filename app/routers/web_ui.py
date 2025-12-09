@@ -28,7 +28,8 @@ async def index(request: Request):
         "stats": [s.model_dump(mode='json') for s in stats],
         "total_download": total_download,
         "pull_count": pull_count,
-        "pull_history": [p.model_dump(mode='json') for p in pull_history]
+        "pull_history": [p.model_dump(mode='json') for p in pull_history],
+        "https_port": 8443
     })
 
 @router.get("/api/pulls")

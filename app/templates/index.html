@@ -341,7 +341,7 @@
                     const prefix = node.route_prefix ? node.route_prefix + '/' : '';
                     
                     if (type === 'dockerhub') {
-                        this.helpCommand = `docker pull ${this.host}/${prefix}nginx`;
+                        this.helpCommand = `docker pull ${this.host}/library/nginx`;
                     } else if (type === 'ghcr') {
                         this.helpCommand = `docker pull ${this.host}/${prefix}owner/image:tag`;
                     } else if (type === 'gcr') {

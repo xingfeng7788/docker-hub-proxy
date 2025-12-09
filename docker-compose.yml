@@ -4,6 +4,7 @@ services:
     container_name: docker-hub-proxy
     ports:
       - "8000:8000"
+      - "8443:8443"
     volumes:
       - ./database.db:/app/database.db
     restart: unless-stopped
