@@ -89,3 +89,8 @@ async def delete_proxy_node(proxy_id: int):
 async def trigger_speed_test():
     await proxy_manager.run_speed_test()
     return {"status": "started"}
+
+@router.post("/api/proxies/fetch")
+async def fetch_proxies():
+    await proxy_manager.fetch_and_update_proxies()
+    return {"status": "ok"}

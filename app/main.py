@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     
     logger.info("Starting Speed Test Scheduler...")
     scheduler.add_job(proxy_manager.run_speed_test, 'interval', minutes=60)
+    scheduler.add_job(proxy_manager.fetch_and_update_proxies, 'interval', minutes=60)
     scheduler.start()
     
     # Run initial speed test

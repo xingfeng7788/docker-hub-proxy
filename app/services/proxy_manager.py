@@ -49,6 +49,65 @@ async def check_proxy_latency(node: ProxyNode):
         # logger.warning(f"Proxy {node.name} failed: {e}")
         return 9999.0
 
+async def fetch_and_update_proxies():
+    """Fetch free proxies from external source and add them to DB."""
+    url = "https://status.anye.xyz/status.json"
+    logger.info(f"Fetching proxies from {url}...")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch proxies: {response.status_code}")
+                return
+
+            data = response.json()
+            added_count = 0
+            
+            with Session(engine) as session:
+                existing_urls = {p.url for p in session.exec(select(ProxyNode)).all()}
+                
+                for item in data:
+                    # Filter logic
+                    is_valid = True
+                    tags = item.get("tags", [])
+                    for tag in tags:
+                        tag_name = tag.get("name", "")
+                        if "付费" in tag_name or "内网" in tag_name or "需登陆" in tag_name:
+                            is_valid = False
+                            break
+                    
+                    if not is_valid:
+                        continue
+
+                    node_url = item.get("url")
+                    if not node_url:
+                        continue
+                        
+                    # Normalize URL (remove trailing slash)
+                    node_url = node_url.rstrip("/")
+                    
+                    # Check if exists (check against normalized existing urls)
+                    if node_url in existing_urls or (node_url + "/") in existing_urls:
+                        continue
+                        
+                    # Add new node
+                    new_node = ProxyNode(
+                        name=item.get("name", "Unknown Mirror"),
+                        url=node_url,
+                        registry_type="dockerhub", # Most of these are dockerhub mirrors
+                        enabled=True
+                    )
+                    session.add(new_node)
+                    existing_urls.add(node_url) # Prevent duplicates in same batch
+                    added_count += 1
+                
+                session.commit()
+            
+            logger.info(f"Successfully added {added_count} new proxies.")
+
+    except Exception as e:
+        logger.error(f"Error fetching proxies: {e}")
+
 async def run_speed_test():
     """Run speed test on all enabled proxies."""
     logger.info("Starting speed test...")
@@ -59,6 +118,10 @@ async def run_speed_test():
             latency = await check_proxy_latency(proxy)
             proxy.latency = latency
             proxy.last_check = datetime.now()
+            if latency >= 9999.0:
+                proxy.enabled = False # Mark as disabled if timeout
+            else:
+                proxy.enabled = True # Re-enable if it comes back online
             session.add(proxy)
         
         session.commit()

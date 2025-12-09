@@ -83,6 +83,9 @@
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-xl font-bold text-gray-800">Proxy Nodes</h3>
                         <div class="space-x-2">
+                            <button @click="fetchNodes" :disabled="fetching" class="text-sm bg-purple-50 text-purple-600 px-3 py-1 rounded hover:bg-purple-100">
+                                <i class="fas fa-cloud-download-alt mr-1" :class="{'fa-spin': fetching}"></i> Fetch Free Nodes
+                            </button>
                             <button @click="testSpeed" :disabled="testing" class="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100">
                                 <i class="fas fa-tachometer-alt mr-1" :class="{'fa-spin': testing}"></i> Test Speed
                             </button>
@@ -168,6 +171,23 @@
                 </div>
             </div>
         </main>
+
+        <!-- Help Modal -->
+        <div v-if="showHelpModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 w-full max-w-lg">
+                <h3 class="text-xl font-bold mb-4">[[ helpTitle ]]</h3>
+                <p class="text-gray-600 mb-2">Use the following command to pull images via this proxy:</p>
+                <div class="bg-gray-800 text-white p-4 rounded-lg font-mono text-sm relative group">
+                    <code>[[ helpCommand ]]</code>
+                    <button @click="copyHelpCommand" class="absolute top-2 right-2 text-gray-400 hover:text-white opacity-0 group-hover:opacity-100 transition">
+                        <i class="fas fa-copy"></i>
+                    </button>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button @click="showHelpModal = false" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">Got it</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Pulls History Modal -->
         <div v-if="showPullsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -269,9 +289,13 @@
                     host: window.location.host,
                     showAddModal: false,
                     showPullsModal: false,
+                    showHelpModal: false,
+                    helpCommand: '',
+                    helpTitle: '',
                     isEdit: false,
                     formNode: { id: null, name: '', url: '', registry_type: 'dockerhub', route_prefix: '', username: '', password: '' },
-                    testing: false
+                    testing: false,
+                    fetching: false
                 }
             },
             methods: {
@@ -284,12 +308,16 @@
                 copyCommand(img) {
                     const name = img.repo_name.includes('/') ? img.repo_name : `library/${img.repo_name}`;
                     const cmd = `docker pull ${this.host}/${name}`;
-                    
-                    // Fallback for non-secure contexts (HTTP)
-                    if (!navigator.clipboard) {
+                    this.copyToClipboard(cmd);
+                },
+                copyHelpCommand() {
+                    this.copyToClipboard(this.helpCommand);
+                },
+                copyToClipboard(text) {
+                     if (!navigator.clipboard) {
                         const textArea = document.createElement("textarea");
-                        textArea.value = cmd;
-                        textArea.style.position = "fixed"; // Avoid scrolling to bottom
+                        textArea.value = text;
+                        textArea.style.position = "fixed"; 
                         document.body.appendChild(textArea);
                         textArea.focus();
                         textArea.select();
@@ -302,29 +330,41 @@
                         return;
                     }
 
-                    navigator.clipboard.writeText(cmd).then(() => {
-                        // Success: No alert needed as per user request
+                    navigator.clipboard.writeText(text).then(() => {
+                        // Success
                     }, (err) => {
                         console.error('Async: Could not copy text: ', err);
                     });
                 },
                 showHelp(node) {
-                    let example = "";
                     const type = node.registry_type || 'dockerhub';
                     const prefix = node.route_prefix ? node.route_prefix + '/' : '';
                     
                     if (type === 'dockerhub') {
-                        example = `docker pull ${this.host}/${prefix}nginx\n(or ${this.host}/${prefix}username/repo:tag)`;
+                        this.helpCommand = `docker pull ${this.host}/${prefix}nginx`;
                     } else if (type === 'ghcr') {
-                        example = `docker pull ${this.host}/${prefix}owner/image:tag\n(Example: ${this.host}/${prefix}features/node:latest)`;
+                        this.helpCommand = `docker pull ${this.host}/${prefix}owner/image:tag`;
                     } else if (type === 'gcr') {
-                        example = `docker pull ${this.host}/${prefix}project-id/image:tag`;
+                        this.helpCommand = `docker pull ${this.host}/${prefix}project-id/image:tag`;
                     } else if (type === 'quay') {
-                        example = `docker pull ${this.host}/${prefix}organization/image:tag`;
+                        this.helpCommand = `docker pull ${this.host}/${prefix}organization/image:tag`;
                     } else {
-                        example = `docker pull ${this.host}/${prefix}image:tag`;
+                        this.helpCommand = `docker pull ${this.host}/${prefix}image:tag`;
                     }
-                    alert(`Usage for ${node.name} (${type.toUpperCase()}):\n\n${example}`);
+                    
+                    this.helpTitle = `How to pull from ${node.name}`;
+                    this.showHelpModal = true;
+                },
+                async fetchNodes() {
+                    this.fetching = true;
+                    try {
+                        await fetch('/api/proxies/fetch', { method: 'POST' });
+                        // Give it a moment for the backend to process (even though we await in backend, just in case)
+                        setTimeout(() => window.location.reload(), 500);
+                    } catch (e) {
+                        alert("Failed to fetch nodes");
+                        this.fetching = false;
+                    }
                 },
                 openAddModal() {
                     this.isEdit = false;
