@@ -26,8 +26,10 @@
 *   **🖥 现代化 UI**：
     *   提供镜像搜索功能（代理 Docker Hub 官方搜索）。
     *   生成详细的 `docker pull` 命令提示。
-![img.png](img/img.png)
-![img_1.png](img/img_1.png)
+*   **界面展示**：
+![img_2.png](img/img_2.png)
+![img_3.png](img/img_3.png)
+![img_4.png](img/img_4.png)
 ## 🚀 快速开始
 
 ### 方式一：Docker Compose (推荐)
