@@ -111,12 +111,12 @@ async def get_upstream_token(realm: str, service: str, scope: str, username: str
         return None
 
 async def proxy_v2(path: str, request: Request):
-    # 1. Get Best Proxy Node
-    proxy_node = proxy_manager.get_best_proxy()
+    # 1. Get Best Proxy Node (and adjusted path if prefix matched)
+    proxy_node, adjusted_path = proxy_manager.get_best_proxy(path)
     upstream_base = proxy_node.url
     
     # Ensure no trailing slash on base, lead slash on path handled by f-string logic
-    upstream_url = f"{upstream_base.rstrip('/')}/v2/{path}"
+    upstream_url = f"{upstream_base.rstrip('/')}/v2/{adjusted_path}"
     
     # Query params
     if request.url.query:

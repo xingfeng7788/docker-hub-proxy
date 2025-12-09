@@ -6,6 +6,8 @@ class ProxyNode(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     url: str  # Upstream URL, e.g., "https://registry-1.docker.io"
+    registry_type: str = Field(default="dockerhub") # dockerhub, ghcr, gcr, quay, k8s, other
+    route_prefix: Optional[str] = Field(default=None, index=True) # e.g., "ghcr", "gcr", "k8s"
     enabled: bool = True
     latency: float = Field(default=9999.0) # In ms
     last_check: Optional[datetime] = None

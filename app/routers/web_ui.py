@@ -51,12 +51,14 @@ async def search_images(q: str):
 async def add_proxy_node(
     name: str = Form(...), 
     url: str = Form(...),
+    registry_type: str = Form("dockerhub"),
+    route_prefix: str = Form(None),
     username: str = Form(None),
     password: str = Form(None)
 ):
     if not url.startswith("http"):
         raise HTTPException(status_code=400, detail="Invalid URL")
-    proxy_manager.add_proxy(name, url, username, password)
+    proxy_manager.add_proxy(name, url, registry_type, route_prefix, username, password)
     return {"status": "ok"}
 
 @router.put("/api/proxies/{proxy_id}")
@@ -64,13 +66,15 @@ async def update_proxy_node(
     proxy_id: int,
     name: str = Form(...),
     url: str = Form(...),
+    registry_type: str = Form("dockerhub"),
+    route_prefix: str = Form(None),
     username: str = Form(None),
     password: str = Form(None)
 ):
     if not url.startswith("http"):
         raise HTTPException(status_code=400, detail="Invalid URL")
     
-    node = proxy_manager.update_proxy(proxy_id, name, url, username, password)
+    node = proxy_manager.update_proxy(proxy_id, name, url, registry_type, route_prefix, username, password)
     if not node:
         raise HTTPException(status_code=404, detail="Proxy not found")
         
