@@ -157,7 +157,7 @@ async def proxy_v2(path: str, request: Request):
                 # Close previous stream
                 await r.aclose()
                 
-                logger.info(f"Upstream 401, attempting auto-auth for {proxy_node.name}")
+                logger.info(f"Upstream 401 (Bearer), attempting auto-auth for {proxy_node.name}")
                 auth_info = await parse_www_authenticate(auth_header)
                 if auth_info.get("realm"):
                     token = await get_upstream_token(
@@ -178,6 +178,20 @@ async def proxy_v2(path: str, request: Request):
                         # Re-open the original request or let it fall through? 
                         # We need to re-request to get the 401 body/headers back if we closed it.
                         r = await send_request(upstream_url, headers, content)
+            
+            elif auth_header and "Basic" in auth_header and proxy_node.username and proxy_node.password:
+                # Close previous stream
+                await r.aclose()
+                logger.info(f"Upstream 401 (Basic), attempting auto-auth for {proxy_node.name}")
+                
+                retry_headers = headers.copy()
+                # Manual Basic Auth Header Construction
+                auth_str = f"{proxy_node.username}:{proxy_node.password}"
+                b64_auth = base64.b64encode(auth_str.encode()).decode()
+                retry_headers["Authorization"] = f"Basic {b64_auth}"
+                
+                logger.info("Retrying request with Basic Auth...")
+                r = await send_request(upstream_url, retry_headers, content)
 
     except Exception as e:
         if r: await r.aclose()
