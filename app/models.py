@@ -14,6 +14,7 @@ class ProxyNode(SQLModel, table=True):
     is_default: bool = False
     username: Optional[str] = Field(default=None)
     password: Optional[str] = Field(default=None)
+    failure_reason: Optional[str] = Field(default=None)
 
 class TrafficStats(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

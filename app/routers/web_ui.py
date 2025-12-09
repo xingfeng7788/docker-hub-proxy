@@ -58,7 +58,9 @@ async def add_proxy_node(
 ):
     if not url.startswith("http"):
         raise HTTPException(status_code=400, detail="Invalid URL")
-    proxy_manager.add_proxy(name, url, registry_type, route_prefix, username, password)
+    node = proxy_manager.add_proxy(name, url, registry_type, route_prefix, username, password)
+    # Automatically test speed/validity
+    await proxy_manager.check_and_update_proxy(node)
     return {"status": "ok"}
 
 @router.put("/api/proxies/{proxy_id}")

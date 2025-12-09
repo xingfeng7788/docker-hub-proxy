@@ -27,7 +27,7 @@ def init_proxies():
             session.commit()
 
 async def check_proxy_latency(node: ProxyNode):
-    """Check latency for a single proxy node."""
+    """Check latency for a single proxy node. Returns (latency, error_message)."""
     url = node.url.rstrip("/") + "/v2/"
     start = datetime.now()
     try:
@@ -42,12 +42,37 @@ async def check_proxy_latency(node: ProxyNode):
             # 200 or 401 means it's a docker registry
             if response.status_code in [200, 401]:
                 duration = (datetime.now() - start).total_seconds() * 1000
-                return duration
+                return duration, None
             else:
-                return 9999.0
+                return 9999.0, f"Status: {response.status_code}"
+    except httpx.ConnectTimeout:
+        return 9999.0, "Connection Timeout"
+    except httpx.ConnectError:
+        return 9999.0, "Connection Failed"
     except Exception as e:
         # logger.warning(f"Proxy {node.name} failed: {e}")
-        return 9999.0
+        return 9999.0, str(e)
+
+async def check_and_update_proxy(node: ProxyNode):
+    """Check and update a single proxy node status."""
+    latency, error = await check_proxy_latency(node)
+    
+    with Session(engine) as session:
+        # Re-fetch node to ensure attached to session
+        db_node = session.get(ProxyNode, node.id)
+        if db_node:
+            db_node.latency = latency
+            db_node.failure_reason = error
+            db_node.last_check = datetime.now()
+            if latency >= 9999.0:
+                db_node.enabled = False
+            else:
+                db_node.enabled = True
+            session.add(db_node)
+            session.commit()
+            session.refresh(db_node)
+            return db_node
+    return node
 
 async def fetch_and_update_proxies():
     """Fetch free proxies from external source and add them to DB."""
@@ -115,19 +140,38 @@ async def run_speed_test():
     """Run speed test on all enabled proxies."""
     logger.info("Starting speed test...")
     with Session(engine) as session:
+        # Get all proxies (not just enabled ones, so we can re-enable disabled ones if they come back? 
+        # Original logic was only enabled ones. But if a node is disabled, how does it come back? 
+        # The user's request implies we want to see failure reason for disabled nodes.
+        # If we only check enabled nodes, we never check disabled ones. 
+        # However, checking ALL nodes might be slow if there are many dead ones.
+        # For now, I will stick to checking enabled ones OR ones that we want to retry?
+        # Actually, usually you want to check everything occasionally. 
+        # But let's stick to original logic: check enabled ones. 
+        # Wait, if I disable it on failure, I need a way to re-enable it. 
+        # The original code did: `proxies = session.exec(select(ProxyNode).where(ProxyNode.enabled == True)).all()`
+        # AND `if latency >= 9999.0: proxy.enabled = False`.
+        # This means once a node fails, it is disabled and NEVER checked again automatically.
+        # This seems like a flaw, or intended behavior (manual re-enable). 
+        # I will keep it as is for 'run_speed_test' but maybe the user wants to check all?
+        # The user said "When manually adding a node automatically test speed".
+        # I'll stick to check enabled nodes for the global test to avoid changing behavior too much, 
+        # unless I see a reason to change. 
+        # Actually, if I want to show the failure reason, it must be stored.
+        
         proxies = session.exec(select(ProxyNode).where(ProxyNode.enabled == True)).all()
         
-        for proxy in proxies:
-            latency = await check_proxy_latency(proxy)
-            proxy.latency = latency
-            proxy.last_check = datetime.now()
-            if latency >= 9999.0:
-                proxy.enabled = False # Mark as disabled if timeout
-            else:
-                proxy.enabled = True # Re-enable if it comes back online
-            session.add(proxy)
-        
-        session.commit()
+    # We shouldn't keep session open during async calls if possible, or use async session. 
+    # But here we are iterating. 
+    # Better to get IDs and process them.
+    proxy_ids = [p.id for p in proxies]
+    
+    for pid in proxy_ids:
+        with Session(engine) as session:
+            p = session.get(ProxyNode, pid)
+            if p:
+                await check_and_update_proxy(p)
+                
     logger.info("Speed test completed.")
 
 def get_best_proxy(path: str = "") -> tuple[Optional[ProxyNode], str]:

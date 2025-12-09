@@ -2,10 +2,14 @@ from sqlmodel import SQLModel, create_engine, text
 from sqlalchemy.pool import StaticPool
 from sqlalchemy import inspect
 import logging
+import os
 
 logger = logging.getLogger("database")
 
-sqlite_file_name = "database.db"
+# Ensure data directory exists
+os.makedirs("data", exist_ok=True)
+
+sqlite_file_name = "data/database.db"
 sqlite_url = f"sqlite:///{sqlite_file_name}"
 
 # check_same_thread=False is needed for SQLite with FastAPI/Threads
@@ -34,6 +38,10 @@ def upgrade_db():
                 if "route_prefix" not in columns:
                     logger.info("Migrating: Adding route_prefix column to proxynode")
                     conn.execute(text("ALTER TABLE proxynode ADD COLUMN route_prefix VARCHAR"))
+
+                if "failure_reason" not in columns:
+                    logger.info("Migrating: Adding failure_reason column to proxynode")
+                    conn.execute(text("ALTER TABLE proxynode ADD COLUMN failure_reason VARCHAR"))
                 
                 conn.commit()
     except Exception as e:
