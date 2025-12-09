@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+httpx
+jinja2
+sqlmodel
+aiosqlite
+apscheduler
+python-multipart
+requests

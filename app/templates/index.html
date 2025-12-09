@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docker Hub Proxy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app">
+        <!-- Header -->
+        <header class="gradient-bg text-white pb-24">
+            <div class="container mx-auto px-6 py-8">
+                <div class="flex justify-between items-center mb-8">
+                    <div class="flex items-center space-x-3">
+                        <i class="fa-brands fa-docker text-4xl"></i>
+                        <h1 class="text-2xl font-bold">Docker Proxy Hub</h1>
+                    </div>
+                    <div class="text-sm opacity-90">
+                        {{ total_reqs }} Requests | {{ "%.2f"|format(total_download / 1024 / 1024) }} MB Traffic
+                    </div>
+                </div>
+                
+                <!-- Search -->
+                <div class="max-w-2xl mx-auto text-center">
+                    <h2 class="text-3xl font-bold mb-6">Search & Pull Docker Images</h2>
+                    <div class="relative">
+                        <input type="text" 
+                               v-model="searchQuery" 
+                               @keyup.enter="search"
+                               placeholder="Search images (e.g., ubuntu, nginx)..." 
+                               class="w-full px-6 py-4 rounded-full text-gray-800 focus:outline-none shadow-lg text-lg">
+                        <button @click="search" 
+                                class="absolute right-2 top-2 bg-indigo-600 text-white p-2 rounded-full w-10 h-10 hover:bg-indigo-700 transition">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="container mx-auto px-6 -mt-16 pb-12">
+            
+            <!-- Search Results -->
+            <div v-if="searchResults.length > 0" class="bg-white rounded-xl shadow-md p-6 mb-8">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">Search Results</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div v-for="img in searchResults" :key="img.slug" class="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition">
+                        <div class="flex items-start justify-between">
+                            <div>
+                                <h4 class="font-bold text-lg text-indigo-600">[[ img.repo_name ]]</h4>
+                                <p class="text-sm text-gray-500 mt-1">[[ img.short_description ]]</p>
+                            </div>
+                            <div class="text-yellow-500 flex items-center space-x-1">
+                                <i class="fas fa-star"></i>
+                                <span class="text-sm font-bold">[[ img.star_count ]]</span>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
+                            <code class="bg-gray-100 px-2 py-1 rounded text-sm select-all">docker pull [[ host ]]/[[ img.repo_name.includes('/') ? img.repo_name : 'library/' + img.repo_name ]]</code>
+                            <button @click="copyCommand(img)" class="text-gray-400 hover:text-indigo-600">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Proxy Nodes -->
+                <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xl font-bold text-gray-800">Proxy Nodes</h3>
+                        <div class="space-x-2">
+                            <button @click="testSpeed" :disabled="testing" class="text-sm bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100">
+                                <i class="fas fa-tachometer-alt mr-1" :class="{'fa-spin': testing}"></i> Test Speed
+                            </button>
+                            <button @click="openAddModal" class="text-sm bg-green-50 text-green-600 px-3 py-1 rounded hover:bg-green-100">
+                                <i class="fas fa-plus mr-1"></i> Add Node
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead>
+                                <tr class="text-gray-500 text-sm border-b">
+                                    <th class="pb-3">Name</th>
+                                    <th class="pb-3">URL</th>
+                                    <th class="pb-3">Latency</th>
+                                    <th class="pb-3">Status</th>
+                                    <th class="pb-3">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-sm">
+                                <tr v-for="node in proxies" :key="node.id" class="border-b last:border-0 hover:bg-gray-50">
+                                    <td class="py-3 font-medium">[[ node.name ]]</td>
+                                    <td class="py-3 text-gray-500 truncate max-w-xs">[[ node.url ]]</td>
+                                    <td class="py-3">
+                                        <span :class="{
+                                            'text-green-500 font-bold': node.latency < 500,
+                                            'text-yellow-500 font-bold': node.latency >= 500 && node.latency < 2000,
+                                            'text-red-500 font-bold': node.latency >= 2000
+                                        }">
+                                            [[ node.latency >= 9999 ? 'Timeout' : node.latency.toFixed(0) + ' ms' ]]
+                                        </span>
+                                    </td>
+                                    <td class="py-3">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                              :class="node.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'">
+                                            [[ node.enabled ? 'Active' : 'Disabled' ]]
+                                        </span>
+                                    </td>
+                                    <td class="py-3">
+                                        <button @click="openEditModal(node)" class="text-blue-400 hover:text-blue-600 mr-2">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button v-if="!node.is_default" @click="deleteNode(node.id)" class="text-red-400 hover:text-red-600">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Traffic Stats -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-6">Traffic History</h3>
+                    <div class="space-y-4">
+                        <div v-for="stat in stats" :key="stat.date" class="flex justify-between items-center text-sm border-b pb-2">
+                            <span class="text-gray-600">[[ stat.date ]]</span>
+                            <span class="font-medium text-indigo-600">[[ (stat.download_bytes / 1024 / 1024).toFixed(2) ]] MB</span>
+                        </div>
+                        <div v-if="stats.length === 0" class="text-gray-400 text-center py-4">No traffic yet</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Add/Edit Modal -->
+        <div v-if="showAddModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 w-full max-w-md">
+                <h3 class="text-xl font-bold mb-4">[[ isEdit ? 'Edit' : 'Add' ]] Proxy Node</h3>
+                <form @submit.prevent="submitNode">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                        <input v-model="formNode.name" type="text" required class="w-full border rounded px-3 py-2">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">URL (e.g., https://mirror.gcr.io)</label>
+                        <input v-model="formNode.url" type="url" required class="w-full border rounded px-3 py-2">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Username (Optional)</label>
+                        <input v-model="formNode.username" type="text" class="w-full border rounded px-3 py-2" placeholder="Private Registry User">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Password (Optional)</label>
+                        <input v-model="formNode.password" type="password" class="w-full border rounded px-3 py-2" placeholder="Private Registry Pass">
+                    </div>
+                    <div class="flex justify-end space-x-2">
+                        <button type="button" @click="showAddModal = false" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                        <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">[[ isEdit ? 'Save Changes' : 'Add' ]]</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            delimiters: ['[[', ']]'],
+            data() {
+                return {
+                    searchQuery: '',
+                    searchResults: [],
+                    proxies: JSON.parse('{{ proxies | tojson | safe }}'),
+                    stats: JSON.parse('{{ stats | tojson | safe }}'),
+                    host: window.location.host,
+                    showAddModal: false,
+                    isEdit: false,
+                    formNode: { id: null, name: '', url: '', username: '', password: '' },
+                    testing: false
+                }
+            },
+            methods: {
+                async search() {
+                    if (!this.searchQuery) return;
+                    const res = await fetch(`/api/search?q=${this.searchQuery}`);
+                    const data = await res.json();
+                    this.searchResults = data.results || [];
+                },
+                copyCommand(img) {
+                    const name = img.repo_name.includes('/') ? img.repo_name : `library/${img.repo_name}`;
+                    const cmd = `docker pull ${this.host}/${name}`;
+                    navigator.clipboard.writeText(cmd);
+                    alert('Command copied: ' + cmd);
+                },
+                openAddModal() {
+                    this.isEdit = false;
+                    this.formNode = { id: null, name: '', url: '', username: '', password: '' };
+                    this.showAddModal = true;
+                },
+                openEditModal(node) {
+                    this.isEdit = true;
+                    // Clone to avoid direct mutation
+                    this.formNode = { 
+                        id: node.id, 
+                        name: node.name, 
+                        url: node.url, 
+                        username: node.username || '', 
+                        password: node.password || '' 
+                    };
+                    this.showAddModal = true;
+                },
+                async submitNode() {
+                    const formData = new FormData();
+                    formData.append('name', this.formNode.name);
+                    formData.append('url', this.formNode.url);
+                    if (this.formNode.username) formData.append('username', this.formNode.username);
+                    if (this.formNode.password) formData.append('password', this.formNode.password);
+                    
+                    if (this.isEdit) {
+                         await fetch(`/api/proxies/${this.formNode.id}`, { method: 'PUT', body: formData });
+                    } else {
+                         await fetch('/api/proxies', { method: 'POST', body: formData });
+                    }
+                    window.location.reload();
+                },
+                async deleteNode(id) {
+                    if(confirm('Delete this node?')) {
+                        await fetch(`/api/proxies/${id}`, { method: 'DELETE' });
+                        window.location.reload();
+                    }
+                },
+                async testSpeed() {
+                    this.testing = true;
+                    await fetch('/api/test-speed', { method: 'POST' });
+                    // Wait a bit or poll, for now simple reload after 3s
+                    setTimeout(() => window.location.reload(), 3000);
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
