@@ -9,6 +9,28 @@ from typing import Optional
 
 logger = logging.getLogger("proxy_manager")
 
+HUB_TYPES = ["hub", "ghcr", "quay", "mcr", "gcr", "elastic", "nvcr"]
+
+REGISTRY_TYPE_MAP = {
+    "hub": "dockerhub",
+    "ghcr": "ghcr",
+    "quay": "quay",
+    "mcr": "mcr",
+    "gcr": "gcr",
+    "elastic": "elastic",
+    "nvcr": "nvcr",
+}
+
+# Non-hub registries get a route_prefix so the proxy can route requests correctly
+ROUTE_PREFIX_MAP = {
+    "ghcr": "ghcr",
+    "quay": "quay",
+    "mcr": "mcr",
+    "gcr": "gcr",
+    "elastic": "elastic",
+    "nvcr": "nvcr",
+}
+
 DEFAULT_PROXIES = [
     # {"name": "Docker Hub Official", "url": "https://registry-1.docker.io"},
     # {"name": "Google Mirror", "url": "https://mirror.gcr.io"},
@@ -74,64 +96,71 @@ async def check_and_update_proxy(node: ProxyNode):
             return db_node
     return node
 
+async def _fetch_proxies_for_hub_type(client: httpx.AsyncClient, hub_type: str) -> list:
+    """Fetch mirror list for a single hub_type from the status API."""
+    url = f"https://status.anye.xyz/status/{hub_type}"
+    try:
+        response = await client.get(url)
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch proxies for {hub_type}: {response.status_code}")
+            return []
+        return response.json()
+    except Exception as e:
+        logger.error(f"Error fetching proxies for {hub_type}: {e}")
+        return []
+
+
 async def fetch_and_update_proxies():
-    """Fetch free proxies from external source and add them to DB."""
-    url = "https://status.anye.xyz/status.json"
-    logger.info(f"Fetching proxies from {url}...")
+    """Fetch free proxies from status.anye.xyz for all supported registry types."""
+    logger.info("Fetching proxies from status.anye.xyz...")
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(url)
-            if response.status_code != 200:
-                logger.error(f"Failed to fetch proxies: {response.status_code}")
-                return
+            results = await asyncio.gather(
+                *[_fetch_proxies_for_hub_type(client, ht) for ht in HUB_TYPES]
+            )
 
-            data = response.json()
-            added_count = 0
-            
-            with Session(engine) as session:
-                existing_urls = {p.url for p in session.exec(select(ProxyNode)).all()}
-                
-                for item in data:
-                    # Filter logic
-                    is_valid = True
-                    tags = item.get("tags", [])
-                    for tag in tags:
-                        tag_name = tag.get("name", "")
-                        if "付费" in tag_name or "内网" in tag_name or "需登陆" in tag_name:
-                            is_valid = False
-                            break
-                    
-                    if not is_valid:
+        added_count = 0
+
+        with Session(engine) as session:
+            existing_urls = {p.url for p in session.exec(select(ProxyNode)).all()}
+
+            for hub_type, items in zip(HUB_TYPES, results):
+                registry_type = REGISTRY_TYPE_MAP.get(hub_type, hub_type)
+                route_prefix = ROUTE_PREFIX_MAP.get(hub_type)
+
+                for item in items:
+                    # Only add selectable, publicly accessible mirrors
+                    if not item.get("selectable", False):
+                        continue
+                    if item.get("access", "public") != "public":
                         continue
 
                     node_url = item.get("url")
                     if not node_url:
                         continue
-                        
-                    # Normalize URL (remove trailing slash)
+
                     node_url = node_url.rstrip("/")
-                    
-                    # Check if exists (check against normalized existing urls)
+
                     if node_url in existing_urls or (node_url + "/") in existing_urls:
                         continue
-                        
-                    # Add new node
+
                     new_node = ProxyNode(
                         name=item.get("name", "Unknown Mirror"),
                         url=node_url,
-                        registry_type="dockerhub", # Most of these are dockerhub mirrors
-                        enabled=True
+                        registry_type=registry_type,
+                        route_prefix=route_prefix,
+                        enabled=True,
                     )
                     session.add(new_node)
-                    existing_urls.add(node_url) # Prevent duplicates in same batch
+                    existing_urls.add(node_url)
                     added_count += 1
-                
-                session.commit()
-            
-            logger.info(f"Successfully added {added_count} new proxies.")
-            
-            # Run speed test immediately after fetch
-            await run_speed_test()
+
+            session.commit()
+
+        logger.info(f"Successfully added {added_count} new proxies.")
+
+        # Run speed test immediately after fetch
+        await run_speed_test()
 
     except Exception as e:
         logger.error(f"Error fetching proxies: {e}")

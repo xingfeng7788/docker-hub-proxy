@@ -22,8 +22,7 @@ async def index(request: Request):
     pull_count = traffic_logger.get_total_pull_count()
     pull_history = traffic_logger.get_pull_history(limit=300) # Get last 50 pulls
     
-    return templates.TemplateResponse("index.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "index.html", {
         "proxies": [p.model_dump(mode='json') for p in proxies],
         "stats": [s.model_dump(mode='json') for s in stats],
         "total_download": total_download,
