@@ -14,5 +14,5 @@ ENV WORKERS=2
 
 EXPOSE 8000
 
-CMD ["python", "app/main.py"]
+CMD ["python", "-m", "app.main"]
 

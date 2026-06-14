@@ -1,3 +1,3 @@
 #!/bin/bash
 pip install -r requirements.txt
-python app/main.py
+python -m app.main
