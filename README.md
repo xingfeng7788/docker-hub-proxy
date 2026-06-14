@@ -26,6 +26,11 @@
     *   集成 **ECharts**，直观展示近 7 天流量消耗趋势折线图。
     *   记录详细的拉取历史（包含时间、镜像、标签、客户端 IP）。
 
+*   **🖥 界面展示**：
+![img_2.png](img/img_2.png)
+![img_3.png](img/img_3.png)
+![img_4.png](img/img_4.png)
+
 ## 🚀 快速开始
 
 ### 方式一：Docker Compose (推荐)
