@@ -1,10 +1,10 @@
 from datetime import date
 from sqlmodel import Session, select, func
 from app.database import engine
-from app.models import TrafficStats, PullHistory
+from app.models import TrafficStats, PullHistory, get_shanghai_time
 
 def log_traffic(bytes_downloaded: int = 0, bytes_uploaded: int = 0):
-    today_str = date.today().isoformat()
+    today_str = get_shanghai_time().date().isoformat()
     with Session(engine) as session:
         statement = select(TrafficStats).where(TrafficStats.date == today_str)
         stats = session.exec(statement).first()

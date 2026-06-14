@@ -1,6 +1,9 @@
 from typing import Optional
 from sqlmodel import Field, SQLModel
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+def get_shanghai_time():
+    return datetime.now(timezone(timedelta(hours=8)))
 
 class ProxyNode(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -25,7 +28,7 @@ class TrafficStats(SQLModel, table=True):
 
 class PullHistory(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    request_time: datetime = Field(default_factory=datetime.utcnow)
+    request_time: datetime = Field(default_factory=get_shanghai_time)
     image: str
     tag: str
     client_ip: str
