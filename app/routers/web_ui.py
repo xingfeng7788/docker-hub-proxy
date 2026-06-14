@@ -115,6 +115,16 @@ async def trigger_speed_test():
     await proxy_manager.run_speed_test()
     return {"status": "started"}
 
+@router.post("/api/proxies/{proxy_id}/test")
+async def test_single_proxy(proxy_id: int):
+    with Session(engine) as session:
+        p = session.get(ProxyNode, proxy_id)
+        if not p:
+            raise HTTPException(status_code=404, detail="Proxy not found")
+    
+    updated_p = await proxy_manager.check_and_update_proxy(p)
+    return updated_p.model_dump(mode='json')
+
 @router.post("/api/proxies/fetch")
 async def fetch_proxies():
     await proxy_manager.fetch_and_update_proxies()

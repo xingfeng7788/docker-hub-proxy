@@ -104,10 +104,21 @@
                         </div>
                     </div>
                     
+                    <div class="mb-4 border-b border-gray-200">
+                        <ul class="flex flex-wrap -mb-px text-sm font-medium text-center">
+                            <li class="mr-2" v-for="tab in tabs" :key="tab.value">
+                                <a href="#" @click.prevent="currentTab = tab.value; currentPage = 1" 
+                                   :class="currentTab === tab.value ? 'text-indigo-600 border-indigo-600 border-b-2' : 'text-gray-500 border-transparent hover:text-gray-600 hover:border-gray-300'"
+                                   class="inline-block p-4 rounded-t-lg">[[ tab.label ]]</a>
+                            </li>
+                        </ul>
+                    </div>
+                    
                     <div class="overflow-x-auto">
                         <table class="w-full text-left">
                             <thead>
                                 <tr class="text-gray-500 text-sm border-b">
+                                    <th class="pb-3 w-8"><input type="checkbox" @change="selectAll" :checked="selectedIds.length > 0 && selectedIds.length === paginatedProxies.length"></th>
                                     <th class="pb-3">名称</th>
                                     <th class="pb-3">类型</th>
                                     <th class="pb-3">前缀</th>
@@ -118,7 +129,8 @@
                                 </tr>
                             </thead>
                             <tbody class="text-sm">
-                                <tr v-for="node in proxies" :key="node.id" class="border-b last:border-0 hover:bg-gray-50">
+                                <tr v-for="node in paginatedProxies" :key="node.id" class="border-b last:border-0 hover:bg-gray-50">
+                                    <td class="py-3"><input type="checkbox" :value="node.id" v-model="selectedIds"></td>
                                     <td class="py-3 font-medium">[[ node.name ]]</td>
                                     <td class="py-3">
                                         <span class="inline-block px-2 py-1 text-xs font-semibold rounded"
@@ -136,7 +148,8 @@
                                     <td class="py-3 font-mono text-gray-600">[[ node.route_prefix || '/' ]]</td>
                                     <td class="py-3 text-gray-500 truncate max-w-xs">[[ node.url ]]</td>
                                     <td class="py-3">
-                                        <span :class="{
+                                        <span v-if="testingIds.includes(node.id)" class="text-blue-500 font-bold text-xs"><i class="fas fa-spinner fa-spin mr-1"></i>测速中</span>
+                                        <span v-else :class="{
                                             'text-green-500 font-bold': node.latency < 500,
                                             'text-yellow-500 font-bold': node.latency >= 500 && node.latency < 2000,
                                             'text-red-500 font-bold': node.latency >= 2000
@@ -173,6 +186,14 @@
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                    <!-- Pagination -->
+                    <div class="flex justify-between items-center mt-4">
+                        <span class="text-sm text-gray-500">共 [[ filteredProxies.length ]] 个节点, 当前第 [[ currentPage ]]/[[ totalPages ]] 页</span>
+                        <div class="space-x-1">
+                            <button @click="currentPage > 1 && currentPage--" :disabled="currentPage === 1" class="px-3 py-1 border rounded text-sm disabled:opacity-50">上一页</button>
+                            <button @click="currentPage < totalPages && currentPage++" :disabled="currentPage === totalPages" class="px-3 py-1 border rounded text-sm disabled:opacity-50">下一页</button>
+                        </div>
                     </div>
                 </div>
 
@@ -308,7 +329,37 @@
                     isEdit: false,
                     formNode: { id: null, name: '', url: '', registry_type: 'dockerhub', route_prefix: '', username: '', password: '' },
                     testing: false,
-                    fetching: false
+                    fetching: false,
+                    currentTab: 'all',
+                    currentPage: 1,
+                    pageSize: 10,
+                    selectedIds: [],
+                    testingIds: [],
+                    tabs: [
+                        { label: '全部', value: 'all' },
+                        { label: 'DockerHub', value: 'dockerhub' },
+                        { label: 'GHCR', value: 'ghcr' },
+                        { label: 'GCR', value: 'gcr' },
+                        { label: 'Quay', value: 'quay' },
+                        { label: 'K8s', value: 'k8s' },
+                        { label: '其他', value: 'other' }
+                    ]
+                }
+            },
+            computed: {
+                filteredProxies() {
+                    let list = this.proxies;
+                    if (this.currentTab !== 'all') {
+                        list = list.filter(p => (p.registry_type || 'dockerhub') === this.currentTab);
+                    }
+                    return list;
+                },
+                paginatedProxies() {
+                    const start = (this.currentPage - 1) * this.pageSize;
+                    return this.filteredProxies.slice(start, start + this.pageSize);
+                },
+                totalPages() {
+                    return Math.ceil(this.filteredProxies.length / this.pageSize) || 1;
                 }
             },
             mounted() {
@@ -482,11 +533,46 @@
                         window.location.reload();
                     }
                 },
+                selectAll(event) {
+                    if (event.target.checked) {
+                        this.selectedIds = this.paginatedProxies.map(p => p.id);
+                    } else {
+                        this.selectedIds = [];
+                    }
+                },
                 async testSpeed() {
+                    let idsToTest = this.selectedIds.length > 0 ? [...this.selectedIds] : this.filteredProxies.map(p => p.id);
+                    if (idsToTest.length === 0) return;
+                    
                     this.testing = true;
-                    await fetch('/api/test-speed', { method: 'POST' });
-                    // Wait a bit or poll, for now simple reload after 3s
-                    setTimeout(() => window.location.reload(), 3000);
+                    const batchSize = 5;
+                    for (let i = 0; i < idsToTest.length; i += batchSize) {
+                        const batch = idsToTest.slice(i, i + batchSize);
+                        batch.forEach(id => {
+                            if (!this.testingIds.includes(id)) {
+                                this.testingIds.push(id);
+                            }
+                        });
+                        
+                        await Promise.all(batch.map(async id => {
+                            try {
+                                const res = await fetch(`/api/proxies/${id}/test`, { method: 'POST' });
+                                if (res.ok) {
+                                    const updatedNode = await res.json();
+                                    const index = this.proxies.findIndex(p => p.id === id);
+                                    if (index !== -1) {
+                                        this.proxies[index] = updatedNode;
+                                    }
+                                }
+                            } catch (e) {
+                                console.error(e);
+                            } finally {
+                                this.testingIds = this.testingIds.filter(tid => tid !== id);
+                            }
+                        }));
+                    }
+                    this.selectedIds = [];
+                    this.testing = false;
                 }
             }
         }).mount('#app')
