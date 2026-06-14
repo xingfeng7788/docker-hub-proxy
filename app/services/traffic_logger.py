@@ -1,9 +1,9 @@
 from datetime import date
 from sqlmodel import Session, select, func
 from app.database import engine
-from app.models import TrafficStats, PullHistory, get_shanghai_time
+from app.models import TrafficStats, PullHistory, get_shanghai_time, ProxyNode
 
-def log_traffic(bytes_downloaded: int = 0, bytes_uploaded: int = 0):
+def log_traffic(bytes_downloaded: int = 0, bytes_uploaded: int = 0, node_id: int = None):
     today_str = get_shanghai_time().date().isoformat()
     with Session(engine) as session:
         statement = select(TrafficStats).where(TrafficStats.date == today_str)
@@ -17,6 +17,13 @@ def log_traffic(bytes_downloaded: int = 0, bytes_uploaded: int = 0):
         stats.request_count += 1
         
         session.add(stats)
+        
+        if node_id is not None:
+            node = session.get(ProxyNode, node_id)
+            if node:
+                node.download_bytes += bytes_downloaded
+                session.add(node)
+                
         session.commit()
 
 from datetime import datetime, timedelta

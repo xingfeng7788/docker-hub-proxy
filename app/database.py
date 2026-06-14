@@ -42,6 +42,10 @@ def upgrade_db():
                 if "failure_reason" not in columns:
                     logger.info("Migrating: Adding failure_reason column to proxynode")
                     conn.execute(text("ALTER TABLE proxynode ADD COLUMN failure_reason VARCHAR"))
+
+                if "download_bytes" not in columns:
+                    logger.info("Migrating: Adding download_bytes column to proxynode")
+                    conn.execute(text("ALTER TABLE proxynode ADD COLUMN download_bytes INTEGER NOT NULL DEFAULT 0"))
                 
                 conn.commit()
     except Exception as e:
