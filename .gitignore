@@ -176,3 +176,4 @@ bge-m3/
 /database/
 /database.db
 /data/
+.env

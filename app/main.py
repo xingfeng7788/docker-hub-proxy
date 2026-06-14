@@ -43,4 +43,5 @@ app.include_router(docker_proxy.router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    from app.config import config
+    uvicorn.run("app.main:app", host=config.HOST, port=config.PORT, reload=True, workers=config.WORKERS)

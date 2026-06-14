@@ -1,13 +1,37 @@
-from fastapi import APIRouter, Request, Form, HTTPException
+from fastapi import APIRouter, Request, Form, HTTPException, Depends
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets
 from app.services import traffic_logger, proxy_manager
 from app.database import engine
 from sqlmodel import Session, select
 from app.models import TrafficStats, ProxyNode
+from app.config import config
 import httpx
+import json
 
-router = APIRouter()
+security = HTTPBasic(auto_error=False)
+
+def verify_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    if config.ADMIN_USER and config.ADMIN_PASS:
+        if credentials is None:
+            raise HTTPException(
+                status_code=401,
+                detail="Unauthorized",
+                headers={"WWW-Authenticate": 'Basic realm="Restricted Area"'},
+            )
+        correct_username = secrets.compare_digest(credentials.username, config.ADMIN_USER)
+        correct_password = secrets.compare_digest(credentials.password, config.ADMIN_PASS)
+        if not (correct_username and correct_password):
+             raise HTTPException(
+                status_code=401,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": 'Basic realm="Restricted Area"'},
+            )
+    return True
+
+router = APIRouter(dependencies=[Depends(verify_auth)])
 templates = Jinja2Templates(directory="app/templates")
 
 @router.get("/", response_class=HTMLResponse)
@@ -95,3 +119,33 @@ async def trigger_speed_test():
 async def fetch_proxies():
     await proxy_manager.fetch_and_update_proxies()
     return {"status": "ok"}
+
+@router.get("/api/proxies/export")
+async def export_proxies():
+    proxies = proxy_manager.get_all_proxies()
+    content = [p.model_dump(mode='json') for p in proxies]
+    return JSONResponse(
+        content=content,
+        headers={"Content-Disposition": "attachment; filename=proxies.json"}
+    )
+
+@router.post("/api/proxies/import")
+async def import_proxies(request: Request):
+    try:
+        data = await request.json()
+        if not isinstance(data, list):
+            raise ValueError("Expected a list of proxies")
+        for node_data in data:
+            if not node_data.get("url"):
+                continue
+            proxy_manager.add_proxy(
+                name=node_data.get("name", "imported"),
+                url=node_data.get("url"),
+                registry_type=node_data.get("registry_type", "dockerhub"),
+                route_prefix=node_data.get("route_prefix"),
+                username=node_data.get("username"),
+                password=node_data.get("password")
+            )
+        return {"status": "ok", "imported": len(data)}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Import failed: {str(e)}")

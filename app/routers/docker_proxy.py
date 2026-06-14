@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 import httpx
 from app.services import proxy_manager, traffic_logger
+from app.config import config
 import logging
 from urllib.parse import urlparse, quote, unquote
 import base64
@@ -111,6 +112,26 @@ async def get_upstream_token(realm: str, service: str, scope: str, username: str
         return None
 
 async def proxy_v2(path: str, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Check IP Whitelist
+    whitelist = config.get_ip_whitelist()
+    if whitelist and client_ip not in whitelist:
+        logger.warning(f"IP {client_ip} rejected by whitelist.")
+        return Response(content='{"errors":[{"code":"UNAUTHORIZED","message":"IP not in whitelist"}]}', status_code=403)
+        
+    # Check Image Blacklist/Whitelist
+    if path and ("/manifests/" in path or "/blobs/" in path):
+        image_name = path.split('/manifests/')[0] if '/manifests/' in path else path.split('/blobs/')[0]
+        
+        if config.IMAGE_BLACKLIST_REGEX and re.search(config.IMAGE_BLACKLIST_REGEX, image_name):
+            logger.warning(f"Image {image_name} rejected by blacklist.")
+            return Response(content='{"errors":[{"code":"UNAUTHORIZED","message":"Image blacklisted"}]}', status_code=403)
+            
+        if config.IMAGE_WHITELIST_REGEX and not re.search(config.IMAGE_WHITELIST_REGEX, image_name):
+            logger.warning(f"Image {image_name} rejected by whitelist.")
+            return Response(content='{"errors":[{"code":"UNAUTHORIZED","message":"Image not in whitelist"}]}', status_code=403)
+
     # 1. Get Best Proxy Node (and adjusted path if prefix matched)
     proxy_node, adjusted_path = proxy_manager.get_best_proxy(path)
     upstream_base = proxy_node.url

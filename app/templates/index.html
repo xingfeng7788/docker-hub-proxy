@@ -6,6 +6,7 @@
     <title>Docker Hub 代理加速</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         .gradient-bg {
@@ -83,6 +84,14 @@
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-xl font-bold text-gray-800">加速节点</h3>
                         <div class="space-x-2">
+                            <button @click="exportNodes" class="text-sm bg-indigo-50 text-indigo-600 px-3 py-1 rounded hover:bg-indigo-100">
+                                <i class="fas fa-file-export mr-1"></i> 导出
+                            </button>
+                            <button @click="$refs.fileInput.click()" class="text-sm bg-teal-50 text-teal-600 px-3 py-1 rounded hover:bg-teal-100">
+                                <i class="fas fa-file-import mr-1"></i> 导入
+                            </button>
+                            <input type="file" ref="fileInput" @change="importNodes" class="hidden" accept=".json">
+                            
                             <button @click="fetchNodes" :disabled="fetching" class="text-sm bg-purple-50 text-purple-600 px-3 py-1 rounded hover:bg-purple-100">
                                 <i class="fas fa-cloud-download-alt mr-1" :class="{'fa-spin': fetching}"></i> 获取免费节点
                             </button>
@@ -169,14 +178,9 @@
 
                 <!-- Traffic Stats -->
                 <div class="bg-white rounded-xl shadow-md p-6">
-                    <h3 class="text-xl font-bold text-gray-800 mb-6">流量历史</h3>
-                    <div class="space-y-4">
-                        <div v-for="stat in stats" :key="stat.date" class="flex justify-between items-center text-sm border-b pb-2">
-                            <span class="text-gray-600">[[ stat.date ]]</span>
-                            <span class="font-medium text-indigo-600">[[ (stat.download_bytes / 1024 / 1024).toFixed(2) ]] MB</span>
-                        </div>
-                        <div v-if="stats.length === 0" class="text-gray-400 text-center py-4">暂无流量数据</div>
-                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-6">7天流量趋势</h3>
+                    <div id="trafficChart" class="w-full h-64" v-show="stats.length > 0"></div>
+                    <div v-if="stats.length === 0" class="text-gray-400 text-center py-4">暂无流量数据</div>
                 </div>
             </div>
         </main>
@@ -307,7 +311,69 @@
                     fetching: false
                 }
             },
+            mounted() {
+                this.$nextTick(() => {
+                    this.initChart();
+                });
+            },
             methods: {
+                initChart() {
+                    if (this.stats.length === 0) return;
+                    const chartDom = document.getElementById('trafficChart');
+                    if (!chartDom) return;
+                    const myChart = echarts.init(chartDom);
+                    
+                    // Stats usually latest first, reverse to chronological
+                    const chartData = [...this.stats].reverse().slice(-7);
+                    
+                    const option = {
+                        tooltip: { trigger: 'axis', formatter: '{b}<br/>{c} MB' },
+                        xAxis: { type: 'category', data: chartData.map(s => s.date) },
+                        yAxis: { type: 'value', name: 'MB' },
+                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                        series: [{
+                            data: chartData.map(s => (s.download_bytes / 1024 / 1024).toFixed(2)),
+                            type: 'line',
+                            smooth: true,
+                            areaStyle: {
+                                opacity: 0.3
+                            },
+                            itemStyle: { color: '#667eea' },
+                            lineStyle: { color: '#667eea', width: 3 }
+                        }]
+                    };
+                    myChart.setOption(option);
+                    window.addEventListener('resize', () => myChart.resize());
+                },
+                exportNodes() {
+                    window.location.href = '/api/proxies/export';
+                },
+                async importNodes(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        try {
+                            const data = JSON.parse(e.target.result);
+                            const res = await fetch('/api/proxies/import', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(data)
+                            });
+                            if (res.ok) {
+                                alert("导入成功");
+                                window.location.reload();
+                            } else {
+                                alert("导入失败");
+                            }
+                        } catch (err) {
+                            alert("无效的 JSON 文件");
+                        }
+                    };
+                    reader.readAsText(file);
+                    event.target.value = ''; // reset
+                },
                 async search() {
                     if (!this.searchQuery) return;
                     const res = await fetch(`/api/search?q=${this.searchQuery}`);
