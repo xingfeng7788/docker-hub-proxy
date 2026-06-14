@@ -3,7 +3,7 @@ from sqlmodel import Field, SQLModel
 from datetime import datetime, timezone, timedelta
 
 def get_shanghai_time():
-    return datetime.now(timezone(timedelta(hours=8)))
+    return datetime.utcnow() + timedelta(hours=8)
 
 class ProxyNode(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
