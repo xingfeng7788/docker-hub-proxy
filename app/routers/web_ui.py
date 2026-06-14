@@ -5,8 +5,8 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
 from app.services import traffic_logger, proxy_manager
 from app.database import engine
-from sqlmodel import Session, select
-from app.models import TrafficStats, ProxyNode
+from sqlmodel import Session, select, delete
+from app.models import TrafficStats, ProxyNode, PullHistory
 from app.config import config
 import httpx
 import json
@@ -58,6 +58,13 @@ async def index(request: Request):
 async def get_pulls():
     pulls = traffic_logger.get_pull_history(limit=500)
     return [p.model_dump(mode='json') for p in pulls]
+
+@router.delete("/api/pulls")
+async def clear_pull_history():
+    with Session(engine) as session:
+        session.exec(delete(PullHistory))
+        session.commit()
+    return {"status": "ok"}
 
 @router.get("/api/search")
 async def search_images(q: str):
