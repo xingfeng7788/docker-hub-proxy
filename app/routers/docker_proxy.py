@@ -154,7 +154,7 @@ async def proxy_v2(path: str, request: Request):
     content = await request.body()
     traffic_logger.log_traffic(bytes_uploaded=len(content))
 
-    client = httpx.AsyncClient(follow_redirects=True, timeout=None)
+    client = httpx.AsyncClient(follow_redirects=False, timeout=None)
     
     async def send_request(url, head, body, auth=None):
         req = client.build_request(
@@ -253,9 +253,23 @@ async def proxy_v2(path: str, request: Request):
         resp_headers.pop("content-length", None)
     resp_headers.pop("content-encoding", None)
 
+    import asyncio
+    location = resp_headers.get("location")
+    if r.status_code in (301, 302, 303, 307, 308) and location:
+        async def log_redirect_size(loc: str):
+            try:
+                async with httpx.AsyncClient() as bg_client:
+                    head_r = await bg_client.head(loc, follow_redirects=True, timeout=10.0)
+                    size = int(head_r.headers.get("content-length", 0))
+                    if size > 0:
+                        traffic_logger.log_traffic(bytes_downloaded=size)
+            except Exception as e:
+                logger.error(f"Failed to get size for redirect {loc}: {e}")
+        asyncio.create_task(log_redirect_size(location))
+
     async def iter_response():
         try:
-            async for chunk in r.aiter_bytes():
+            async for chunk in r.aiter_bytes(chunk_size=1024 * 1024):
                 traffic_logger.log_traffic(bytes_downloaded=len(chunk))
                 yield chunk
         finally:
@@ -277,14 +291,13 @@ async def proxy_v2_root(request: Request):
 @router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_v2_path(path: str, request: Request):
     # Log Docker Pulls (Manifest Requests)
-    if request.method == "GET" and "/manifests/" in path:
+    if request.method in ["GET", "HEAD"] and "/manifests/" in path:
         try:
-            # Pattern: name/manifests/reference
-            match = re.match(r"^(.+)/manifests/(.+)$", path)
-            if match:
-                image = match.group(1)
-                tag = match.group(2)
-                client_ip = request.client.host if request.client else "unknown"
+            parts = path.split("/manifests/")
+            if len(parts) == 2:
+                image = parts[0]
+                tag = parts[1]
+                client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
                 traffic_logger.log_pull(image=image, tag=tag, client_ip=client_ip)
                 logger.info(f"Logged pull: {image}:{tag} from {client_ip}")
         except Exception as e:
