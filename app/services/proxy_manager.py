@@ -159,9 +159,6 @@ async def fetch_and_update_proxies():
 
         logger.info(f"Successfully added {added_count} new proxies.")
 
-        # Run speed test immediately after fetch
-        await run_speed_test()
-
     except Exception as e:
         logger.error(f"Error fetching proxies: {e}")
 

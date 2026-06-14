@@ -152,7 +152,10 @@ async def proxy_v2(path: str, request: Request):
     
     # Body
     content = await request.body()
-    traffic_logger.log_traffic(bytes_uploaded=len(content))
+    if proxy_node.id is not None:
+        traffic_logger.log_traffic(bytes_uploaded=len(content), node_id=proxy_node.id)
+    else:
+        traffic_logger.log_traffic(bytes_uploaded=len(content))
 
     client = httpx.AsyncClient(follow_redirects=False, timeout=None)
     
@@ -256,21 +259,21 @@ async def proxy_v2(path: str, request: Request):
     import asyncio
     location = resp_headers.get("location")
     if r.status_code in (301, 302, 303, 307, 308) and location:
-        async def log_redirect_size(loc: str):
+        async def log_redirect_size(loc: str, n_id: int):
             try:
                 async with httpx.AsyncClient() as bg_client:
                     head_r = await bg_client.head(loc, follow_redirects=True, timeout=10.0)
                     size = int(head_r.headers.get("content-length", 0))
                     if size > 0:
-                        traffic_logger.log_traffic(bytes_downloaded=size)
+                        traffic_logger.log_traffic(bytes_downloaded=size, node_id=n_id)
             except Exception as e:
                 logger.error(f"Failed to get size for redirect {loc}: {e}")
-        asyncio.create_task(log_redirect_size(location))
+        asyncio.create_task(log_redirect_size(location, proxy_node.id))
 
     async def iter_response():
         try:
             async for chunk in r.aiter_bytes(chunk_size=1024 * 1024):
-                traffic_logger.log_traffic(bytes_downloaded=len(chunk))
+                traffic_logger.log_traffic(bytes_downloaded=len(chunk), node_id=proxy_node.id)
                 yield chunk
         finally:
             await r.aclose()

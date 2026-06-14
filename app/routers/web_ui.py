@@ -135,7 +135,8 @@ async def test_single_proxy(proxy_id: int):
 @router.post("/api/proxies/fetch")
 async def fetch_proxies():
     await proxy_manager.fetch_and_update_proxies()
-    return {"status": "ok"}
+    proxies = proxy_manager.get_all_proxies()
+    return {"status": "ok", "proxies": [p.model_dump(mode='json') for p in proxies]}
 
 @router.get("/api/proxies/export")
 async def export_proxies():
