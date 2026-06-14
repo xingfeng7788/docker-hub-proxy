@@ -291,17 +291,15 @@ async def proxy_v2_root(request: Request):
 @router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_v2_path(path: str, request: Request):
     # Log Docker Pulls (Manifest Requests)
-    if request.method == "GET" and "/manifests/" in path:
+    if request.method in ["GET", "HEAD"] and "/manifests/" in path:
         try:
-            # Pattern: name/manifests/reference
-            match = re.match(r"^(.+)/manifests/(.+)$", path)
-            if match:
-                image = match.group(1)
-                tag = match.group(2)
-                if not tag.startswith("sha256:"):
-                    client_ip = request.client.host if request.client else "unknown"
-                    traffic_logger.log_pull(image=image, tag=tag, client_ip=client_ip)
-                    logger.info(f"Logged pull: {image}:{tag} from {client_ip}")
+            parts = path.split("/manifests/")
+            if len(parts) == 2:
+                image = parts[0]
+                tag = parts[1]
+                client_ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown")
+                traffic_logger.log_pull(image=image, tag=tag, client_ip=client_ip)
+                logger.info(f"Logged pull: {image}:{tag} from {client_ip}")
         except Exception as e:
             logger.error(f"Failed to log pull: {e}")
             
