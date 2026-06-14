@@ -1,7 +1,8 @@
 services:
   docker-hub-proxy:
-    build: .
-    container_name: docker-hub-proxy
+#    build: .
+#    container_name: docker-hub-proxy
+    image: qq510023514/docker-hub:latest
     ports:
       - "8000:8000"
     volumes:
