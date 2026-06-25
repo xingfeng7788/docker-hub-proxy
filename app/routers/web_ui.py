@@ -70,12 +70,18 @@ async def clear_pull_history():
 async def search_images(q: str):
     """Proxy search to Docker Hub"""
     url = f"https://hub.docker.com/v2/search/repositories/?query={q}"
-    async with httpx.AsyncClient() as client:
+    
+    # Use proxy if configured
+    proxies = None
+    if config.SEARCH_PROXY:
+        proxies = config.SEARCH_PROXY
+
+    async with httpx.AsyncClient(proxies=proxies) as client:
         try:
-            resp = await client.get(url)
+            resp = await client.get(url, timeout=10.0)
             return JSONResponse(content=resp.json())
         except Exception as e:
-            return JSONResponse(content={"results": []}, status_code=500)
+            return JSONResponse(content={"results": [], "error": str(e)}, status_code=500)
 
 @router.post("/api/proxies")
 async def add_proxy_node(

@@ -12,6 +12,7 @@ class Config:
     WORKERS = int(os.getenv("WORKERS", 2))
     # Proxy Config
     PROXY_TIMEOUT = float(os.getenv("PROXY_TIMEOUT", 10.0))
+    SEARCH_PROXY = os.getenv("SEARCH_PROXY", "")
 
     # Access Control
     # IP Whitelist (comma separated)
