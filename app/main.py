@@ -35,15 +35,43 @@ async def lifespan(app: FastAPI):
     # Shutdown
     scheduler.shutdown()
 
-app = FastAPI(lifespan=lifespan, title="Docker Hub Proxy")
+# We attach lifespan to the proxy_app, which handles the background tasks
+proxy_app = FastAPI(lifespan=lifespan, title="Docker Hub Proxy")
+proxy_app.include_router(docker_proxy.router)
 
-# Mount Routers
-app.include_router(web_ui.router)
-app.include_router(docker_proxy.router)
+web_app = FastAPI(title="Docker Hub Proxy Web UI")
+web_app.include_router(web_ui.router)
 
 if __name__ == "__main__":
     import uvicorn
     import os
+    import asyncio
     from app.config import config
+    
     debug_mode = os.getenv("DEBUG", "false").lower() == "true"
-    uvicorn.run("app.main:app", host=config.HOST, port=config.PORT, reload=debug_mode, workers=config.WORKERS)
+    
+    async def serve():
+        http_config = uvicorn.Config(
+            app=web_app, 
+            host=config.HOST, 
+            port=config.HTTP_PORT,
+            reload=debug_mode
+        )
+        http_server = uvicorn.Server(http_config)
+        
+        https_config = uvicorn.Config(
+            app=proxy_app, 
+            host=config.HOST, 
+            port=config.HTTPS_PORT,
+            ssl_keyfile=config.SSL_KEYFILE if config.SSL_KEYFILE else None,
+            ssl_certfile=config.SSL_CERTFILE if config.SSL_CERTFILE else None,
+            reload=debug_mode
+        )
+        https_server = uvicorn.Server(https_config)
+        
+        await asyncio.gather(
+            http_server.serve(),
+            https_server.serve()
+        )
+        
+    asyncio.run(serve())

@@ -52,10 +52,11 @@
     # 编辑 .env 修改面板密码、限制 IP 等
     ```
 
-3.  启动服务：
+3.  启动服务（由于启用了本地构建，请添加 `--build`）：
     ```bash
-    docker-compose up -d
+    docker-compose up -d --build
     ```
+    *启动时，如果未配置证书，系统会自动在根目录下的 `certs` 文件夹中生成一个 10 年有效期的自签名 SSL 证书。*
 
 4.  访问 Web UI：
     打开浏览器访问 `http://localhost:8000`
@@ -81,12 +82,15 @@
 
 ### 1. 配置 Docker 客户端 (推荐)
 
-为了让 Docker 守护进程自动使用此代理，请修改 `/etc/docker/daemon.json` (Linux) 或 Docker Desktop 设置。
+为了让 Docker 守护进程自动使用此代理，请修改 `/etc/docker/daemon.json` (Linux) 或 Docker Desktop 设置。注意，如果是自签名证书，你需要配置 `insecure-registries` 以忽略 SSL 校验。
 
 ```json
 {
   "registry-mirrors": [
-    "http://<你的服务器IP>:8000"
+    "https://<你的服务器IP>:8443"
+  ],
+  "insecure-registries": [
+    "<你的服务器IP>:8443"
   ]
 }
 ```
@@ -98,14 +102,14 @@
 
 *   **Docker Hub 官方镜像**:
     ```bash
-    docker pull <服务器IP>:8000/library/nginx:latest
-    docker pull <服务器IP>:8000/mysql:8.0
+    docker pull <服务器IP>:8443/library/nginx:latest
+    docker pull <服务器IP>:8443/mysql:8.0
     ```
 
 *   **GHCR (GitHub Container Registry)**:
     如果配置了前缀为 `ghcr` 的节点：
     ```bash
-    docker pull <服务器IP>:8000/ghcr/owner/image:tag
+    docker pull <服务器IP>:8443/ghcr/owner/image:tag
     ```
 
 ## 🛠 配置说明 (.env)
@@ -115,7 +119,10 @@
 | 变量名 | 说明 | 默认值 |
 |---|---|---|
 | `HOST` | 监听地址 | `0.0.0.0` |
-| `PORT` | 监听端口 | `8000` |
+| `HTTP_PORT` | Web UI 管理页面监听端口 | `8000` |
+| `HTTPS_PORT` | Docker 代理 HTTPS 监听端口 | `8443` |
+| `SSL_KEYFILE` | SSL 证书私钥路径 (容器内) | `/app/certs/key.pem` |
+| `SSL_CERTFILE` | SSL 证书公钥路径 (容器内) | `/app/certs/cert.pem` |
 | `ADMIN_USER` | Web 面板登录账号（留空则公开免密） | 空 |
 | `ADMIN_PASS` | Web 面板登录密码 | 空 |
 | `IP_WHITELIST` | 允许拉取的 IP 白名单 (多个用逗号分隔) | 空 (允许所有) |

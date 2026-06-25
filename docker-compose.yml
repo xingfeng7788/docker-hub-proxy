@@ -1,12 +1,14 @@
 services:
   docker-hub-proxy:
-#    build: .
-#    container_name: docker-hub-proxy
-    image: qq510023514/docker-hub:latest
+    build: .
+    container_name: docker-hub-proxy
+#    image: qq510023514/docker-hub:latest
     ports:
       - "8000:8000"
+      - "8443:8443"
     volumes:
       - ./data:/app/data
+      - ./certs:/app/certs
     env_file:
       - .env
     restart: unless-stopped
