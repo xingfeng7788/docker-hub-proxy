@@ -95,9 +95,7 @@
 
 ### 方式三：快速部署（推荐）
 
-下面提供一份完整部署示例：Web UI 使用 HTTP 8000，镜像代理使用 HTTPS 8443，容器内部代理端口仍为 8443。示例域名 `mirror.aibety.cn` 请替换为自己的域名。镜像名称以 `qq510023514/docker-hub:latest` 为例，请使用实际发布的、包含当前 HTTPS 和双服务启动功能的镜像版本；无需配置 `build` 或安装 Python。
-
-#### 1. 创建部署目录和完整的 docker-compose.yml
+#### 1.  docker-compose.yml
 
 ```bash
 mkdir -p docker-hub-proxy/data docker-hub-proxy/certs
