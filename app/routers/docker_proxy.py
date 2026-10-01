@@ -234,7 +234,6 @@ async def proxy_v2(path: str, request: Request):
     if auth_header:
         logger.info(f"Original Www-Authenticate: {auth_header}")
         my_host = f"{request.url.scheme}://{request.url.netloc}"
-        import re
         realm_pattern = re.compile(r'realm="([^"]+)"')
         match = realm_pattern.search(auth_header)
         if match:
@@ -307,5 +306,4 @@ async def proxy_v2_path(path: str, request: Request):
             logger.error(f"Failed to log pull: {e}")
             
     return await proxy_v2(path=path, request=request)
-
 

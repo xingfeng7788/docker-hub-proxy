@@ -6,4 +6,5 @@ sqlmodel
 aiosqlite
 apscheduler
 python-multipart
+python-dotenv
 requests

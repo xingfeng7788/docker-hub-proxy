@@ -1,0 +1,13 @@
+.git
+.venv
+.idea
+node_modules
+__pycache__
+*.pyc
+.env
+certs
+*.pem
+*.key
+data
+app/data
+tests

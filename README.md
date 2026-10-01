@@ -15,6 +15,7 @@
     *   提供前端 Tab 页快速分类切换，支持节点列表分页。
     *   支持自定义路由前缀（如 `/ghcr/` 转发到 `ghcr.io`）。
 *   **🔐 访问管控与安全 (增强)**：
+    *   **HTTPS 镜像代理**：默认通过 HTTPS 8443 端口拉取镜像，Web UI 单独使用 HTTP 8000 端口。
     *   **Web UI 鉴权**：支持通过配置 `ADMIN_USER` 和 `ADMIN_PASS` 保护控制面板。
     *   **IP 白名单**：支持配置 `IP_WHITELIST` 限制仅允许特定 IP 进行拉取，防止公网被刷流量滥用。
     *   **镜像过滤**：支持基于正则表达式的黑白名单（`IMAGE_WHITELIST_REGEX`, `IMAGE_BLACKLIST_REGEX`），精准控制允许代理拉取的镜像范围。
@@ -46,7 +47,16 @@
     cd docker-hub-proxy
     ```
 
-2.  配置环境变量（可选）：
+2.  配置环境变量到.env：
+    ```text
+    certs/fullchain.pem
+    certs/privkey.pem
+    ```
+    默认已经设置 `SSL_CERTFILE=./certs/fullchain.pem` 和 `SSL_KEYFILE=./certs/privkey.pem`，证书目录只读挂载，不会打包进镜像。必须放入实际证书文件；程序不会自动申请或生成证书。
+
+    使用自签名证书时，还需要在拉取镜像的 Docker 客户端安装信任证书，完整步骤见 [HTTPS 自签名证书部署与排错](#3-https-自签名证书部署与排错)。
+
+    如需修改面板密码、限制 IP 等，可选配置 `.env`（已有文件时保留现有配置）：
     ```bash
     cp .env.example .env
     # 编辑 .env 修改面板密码、限制 IP 等
@@ -54,11 +64,13 @@
 
 3.  启动服务：
     ```bash
-    docker-compose up -d
+    docker compose up -d --build
     ```
+    一个 `docker-compose.yml` 同时启动 Web UI 和镜像代理，共享 `data` 目录。无需创建 `.env` 即可使用默认配置；可选环境文件需要 Docker Compose 2.24.0+。
 
 4.  访问 Web UI：
     打开浏览器访问 `http://localhost:8000`
+    镜像代理地址为 `https://mirror.aibety.cn:8443`。8000 仅提供 Web UI 与管理 API，8443 仅提供镜像代理 `/v2/` 和认证 `/token`；Web UI 中生成的拉取命令使用代理域名和 8443 端口。
 
 ### 方式二：手动运行 (Python)
 
@@ -74,8 +86,12 @@
     cp .env.example .env
     # 编辑 .env 文件
     
-    python app/main.py
+    # 分别在两个终端运行（证书目录与 Compose 部署相同）
+    python -m app.main --service web
+    python -m app.main --service proxy
     ```
+
+程序自动读取项目根目录 `.env`，已有环境变量优先。Web UI 始终使用 HTTP，不读取 TLS 证书。镜像代理通过 Uvicorn 的 [HTTPS 配置](https://www.uvicorn.org/settings/#https) 加载默认证书；只配置一个路径或文件不存在时拒绝启动。显式清空两个证书路径可在本地改用 HTTP。使用公开受信任证书通常无需 `insecure-registries`；使用内部 CA 或自签名证书时，需让 Docker 守护进程信任签发 CA（Linux 路径为 `/etc/docker/certs.d/mirror.aibety.cn:8443/ca.crt`）。证书更新后执行 `docker compose restart docker-hub-proxy` 重新加载。
 
 ## 📖 使用指南
 
@@ -86,7 +102,7 @@
 ```json
 {
   "registry-mirrors": [
-    "http://<你的服务器IP>:8000"
+    "https://mirror.aibety.cn:8443"
   ]
 }
 ```
@@ -98,16 +114,43 @@
 
 *   **Docker Hub 官方镜像**:
     ```bash
-    docker pull <服务器IP>:8000/library/nginx:latest
-    docker pull <服务器IP>:8000/mysql:8.0
+    docker pull mirror.aibety.cn:8443/library/nginx:latest
+    docker pull mirror.aibety.cn:8443/mysql:8.0
     ```
 
 *   **GHCR (GitHub Container Registry)**:
     如果配置了前缀为 `ghcr` 的节点：
     ```bash
-    docker pull <服务器IP>:8000/ghcr/owner/image:tag
+    docker pull mirror.aibety.cn:8443/ghcr/owner/image:tag
     ```
 
+### 3. 局域网内共享配置
+
+假设 `192.168.0.1` 部署了docker-hub-proxy 端口为8443
+
+#### 3.1 其他客户端配置hosts
+
+在每台 Docker 客户端的 `/etc/hosts` 中添加：
+
+```text
+192.168.0.1 mirror.aibety.cn
+```
+
+#### 3.2 将`certs/fullchain.pem`复制到其他客户端中
+
+```bash
+# 在docker-hub-proxy执行
+scp certs/fullchain.pem root@CLIENT_IP:/tmp/mirror-ca.crt
+```
+
+然后在 **拉取镜像的客户端服务器**上执行：
+
+```bash
+mkdir -p /etc/docker/certs.d/mirror.aibety.cn:8443
+cp /tmp/mirror-ca.crt /etc/docker/certs.d/mirror.aibety.cn:8443/ca.crt
+systemctl restart docker
+docker pull mirror.aibety.cn:8443/library/redis:latest
+```
 ## 🛠 配置说明 (.env)
 
 项目支持通过 `.env` 文件或环境变量进行高度定制：
@@ -115,7 +158,13 @@
 | 变量名 | 说明 | 默认值 |
 |---|---|---|
 | `HOST` | 监听地址 | `0.0.0.0` |
-| `PORT` | 监听端口 | `8000` |
+| `PORT` | Web UI HTTP 端口（Compose 固定映射 8000） | `8000` |
+| `PROXY_PORT` | 镜像代理端口（Compose 固定映射 8443） | `8443` |
+| `PROXY_URL` | Web UI 拉取命令中使用的代理地址 | `https://mirror.aibety.cn:8443` |
+| `WORKERS` | 代理工作进程数，Web UI 固定单进程以避免重复定时任务 | `2` |
+| `SSL_CERTFILE` | PEM 格式证书链路径 | `./certs/fullchain.pem` |
+| `SSL_KEYFILE` | PEM 格式私钥路径 | `./certs/privkey.pem` |
+| `SSL_KEYFILE_PASSWORD` | 加密私钥密码（可选） | 空 |
 | `ADMIN_USER` | Web 面板登录账号（留空则公开免密） | 空 |
 | `ADMIN_PASS` | Web 面板登录密码 | 空 |
 | `IP_WHITELIST` | 允许拉取的 IP 白名单 (多个用逗号分隔) | 空 (允许所有) |

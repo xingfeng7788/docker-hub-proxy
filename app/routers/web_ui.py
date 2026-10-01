@@ -8,6 +8,7 @@ from app.database import engine
 from sqlmodel import Session, select, delete
 from app.models import TrafficStats, ProxyNode, PullHistory
 from app.config import config
+from urllib.parse import urlsplit
 import httpx
 import json
 
@@ -51,7 +52,8 @@ async def index(request: Request):
         "stats": [s.model_dump(mode='json') for s in stats],
         "total_download": total_download,
         "pull_count": pull_count,
-        "pull_history": [p.model_dump(mode='json') for p in pull_history]
+        "pull_history": [p.model_dump(mode='json') for p in pull_history],
+        "proxy_host": urlsplit(config.PROXY_URL).netloc,
     })
 
 @router.get("/api/pulls")

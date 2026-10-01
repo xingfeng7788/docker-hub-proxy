@@ -1,12 +1,44 @@
+# Both services share the same database and are started with one command.
+x-common: &common
+  build: .
+  image: docker-hub-proxy:local
+  env_file:
+    - path: .env
+      required: false
+  restart: unless-stopped
+
 services:
-  docker-hub-proxy:
-#    build: .
-#    container_name: docker-hub-proxy
-    image: qq510023514/docker-hub:latest
+  web-ui:
+    <<: *common
+    command: ["python", "-m", "app.main", "--service", "web"]
     ports:
       - "8000:8000"
     volumes:
       - ./data:/app/data
-    env_file:
-      - .env
-    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      PROXY_URL: ${PROXY_URL:-https://mirror.aibety.cn:8443}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  docker-hub-proxy:
+    <<: *common
+    command: ["python", "-m", "app.main", "--service", "proxy"]
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./data:/app/data
+      - ./certs:/app/certs:ro
+    environment:
+      HOST: 0.0.0.0
+      PROXY_PORT: 8443
+      SSL_CERTFILE: ${SSL_CERTFILE:-./certs/fullchain.pem}
+      SSL_KEYFILE: ${SSL_KEYFILE:-./certs/privkey.pem}
+    depends_on:
+      web-ui:
+        condition: service_healthy
