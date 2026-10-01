@@ -39,7 +39,7 @@
 
 ## 🚀 快速开始
 
-### 方式一：Docker Compose (推荐)
+### 方式一：Docker Compose 源码构建
 
 1.  克隆本项目：
     ```bash
@@ -92,6 +92,139 @@
     ```
 
 程序自动读取项目根目录 `.env`，已有环境变量优先。Web UI 始终使用 HTTP，不读取 TLS 证书。镜像代理通过 Uvicorn 的 [HTTPS 配置](https://www.uvicorn.org/settings/#https) 加载默认证书；只配置一个路径或文件不存在时拒绝启动。显式清空两个证书路径可在本地改用 HTTP。使用公开受信任证书通常无需 `insecure-registries`；使用内部 CA 或自签名证书时，需让 Docker 守护进程信任签发 CA（Linux 路径为 `/etc/docker/certs.d/mirror.aibety.cn:8443/ca.crt`）。证书更新后执行 `docker compose restart docker-hub-proxy` 重新加载。
+
+### 方式三：使用已发布的 Docker 镜像（无需克隆源码）
+
+下面提供一份完整部署示例：Web UI 使用 HTTP 8000，镜像代理使用 HTTPS 8443，容器内部代理端口仍为 8443。示例域名 `mirror.aibety.cn` 请替换为自己的域名。镜像名称以 `qq510023514/docker-hub:latest` 为例，请使用实际发布的、包含当前 HTTPS 和双服务启动功能的镜像版本；无需配置 `build` 或安装 Python。
+
+#### 1. 创建部署目录和完整的 docker-compose.yml
+
+```bash
+mkdir -p docker-hub-proxy/data docker-hub-proxy/certs
+cd docker-hub-proxy
+```
+
+在此目录创建 `docker-compose.yml`，内容如下：
+
+```yaml
+x-common: &common
+  image: ${DOCKER_IMAGE:-qq510023514/docker-hub:latest}
+  env_file:
+    - .env
+  restart: unless-stopped
+
+services:
+  web-ui:
+    <<: *common
+    command: ["python", "-m", "app.main", "--service", "web"]
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      PROXY_URL: ${PROXY_URL:-https://mirror.aibety.cn:8443}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  docker-hub-proxy:
+    <<: *common
+    command: ["python", "-m", "app.main", "--service", "proxy"]
+    ports:
+      - "${HTTPS_PORT:-8443}:8443"
+    volumes:
+      - ./data:/app/data
+      - ./certs:/app/certs:ro
+    environment:
+      HOST: 0.0.0.0
+      PROXY_PORT: 8443
+      SSL_CERTFILE: ${SSL_CERTFILE:-/app/certs/fullchain.pem}
+      SSL_KEYFILE: ${SSL_KEYFILE:-/app/certs/privkey.pem}
+    depends_on:
+      web-ui:
+        condition: service_healthy
+```
+
+两个服务使用同一镜像并共享 `data` 数据目录。证书保留在宿主机 `certs` 目录中，以只读方式挂载到代理容器；不需要将证书打包进镜像，也不需要修改 `.github/workflows/docker-publish.yml`。
+
+#### 2. 配置环境变量
+
+在同一目录创建 `.env`：
+
+```dotenv
+DOCKER_IMAGE=qq510023514/docker-hub:latest
+
+# 宿主机端口
+WEB_PORT=8000
+HTTPS_PORT=8443
+
+# 面板生成镜像拉取命令时使用的地址；与域名及 HTTPS_PORT 保持一致
+PROXY_URL=https://mirror.aibety.cn:8443
+
+# 容器内证书路径，而非宿主机绝对路径
+SSL_CERTFILE=/app/certs/fullchain.pem
+SSL_KEYFILE=/app/certs/privkey.pem
+SSL_KEYFILE_PASSWORD=
+
+# 管理面板账号密码，请自行设置
+ADMIN_USER=admin
+ADMIN_PASS=replace-with-your-password
+
+WORKERS=2
+PROXY_TIMEOUT=10.0
+
+# 可选访问控制；留空不限制
+IP_WHITELIST=
+IMAGE_WHITELIST_REGEX=
+IMAGE_BLACKLIST_REGEX=
+```
+
+修改 `HTTPS_PORT` 时，同时修改 `PROXY_URL` 中的端口。此示例固定容器内部代理端口为 8443，无需修改 `PROXY_PORT`。设置域名 DNS 或客户端 hosts，使该域名解析到部署服务器可访问的 IP。
+
+#### 3. 下载SSL证书
+
+在部署目录下载并运行项目提供的脚本，无需克隆源码或自建证书服务器。需要安装 `curl` 和 `openssl`：
+
+```bash
+curl -fL --retry 2 \
+  https://raw.githubusercontent.com/xingfeng7788/docker-hub-proxy/master/scripts/download-certs.sh \
+  -o download-certs.sh
+sh download-certs.sh
+```
+
+#### 4. 拉取镜像并启动
+
+确认目录中已存在以下文件：
+
+```text
+docker-hub-proxy/
+├── docker-compose.yml
+├── .env
+├── data/
+└── certs/
+    ├── fullchain.pem
+    ├── privkey.pem
+    └── ca.crt          # 自签名方案的客户端信任副本
+```
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose ps
+```
+
+使用 `docker-compose` 命令的环境可以将上述 `docker compose` 替换为 `docker-compose`。访问面板 `http://服务器IP:8000`，镜像代理地址为 `https://mirror.aibety.cn:8443`。自签名证书的客户端完成信任配置后，可以执行：
+
+```bash
+docker pull mirror.aibety.cn:8443/library/redis:latest
+```
+
+后续更新镜像时执行 `docker compose pull`、`docker compose up -d`。替换证书文件后执行 `docker compose restart docker-hub-proxy`；自签名证书更新后，也需要同步更新客户端安装的 `ca.crt`。修改 `.env` 或 Compose 配置时，执行 `docker compose up -d --force-recreate` 重新创建容器。
 
 ## 📖 使用指南
 
