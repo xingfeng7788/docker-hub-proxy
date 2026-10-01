@@ -172,8 +172,10 @@ internlm2-chat-7b/
 sqlcoder-7b-2/
 bge-m3/
 /application/tests/
-/tests/
 /database/
 /database.db
 /data/
 .env
+
+# TLS certificates and private key
+# TLS certificates and private key

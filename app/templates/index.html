@@ -338,7 +338,7 @@
                     proxies: JSON.parse('{{ proxies | tojson | safe }}'),
                     stats: JSON.parse('{{ stats | tojson | safe }}'),
                     pullHistory: JSON.parse('{{ pull_history | tojson | safe }}'),
-                    host: window.location.host,
+                    host: {{ proxy_host | tojson }},
                     showAddModal: false,
                     showPullsModal: false,
                     showHelpModal: false,
