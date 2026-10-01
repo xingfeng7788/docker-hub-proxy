@@ -1,9 +1,10 @@
 from typing import Optional
 from sqlmodel import Field, SQLModel
+from sqlalchemy import DateTime
 from datetime import datetime, timezone, timedelta
 
 def get_shanghai_time():
-    return datetime.utcnow() + timedelta(hours=8)
+    return datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
 
 class ProxyNode(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -13,7 +14,8 @@ class ProxyNode(SQLModel, table=True):
     route_prefix: Optional[str] = Field(default=None, index=True) # e.g., "ghcr", "gcr", "k8s"
     enabled: bool = True
     latency: float = Field(default=9999.0) # In ms
-    last_check: Optional[datetime] = None
+    # Keep the existing SQLite naive timestamp format across SQLModel versions.
+    last_check: Optional[datetime] = Field(default=None, sa_type=DateTime(timezone=False))
     is_default: bool = False
     username: Optional[str] = Field(default=None)
     password: Optional[str] = Field(default=None)
@@ -29,7 +31,10 @@ class TrafficStats(SQLModel, table=True):
 
 class PullHistory(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    request_time: datetime = Field(default_factory=get_shanghai_time)
+    # Existing pull history stores Shanghai wall time, not UTC timestamps.
+    request_time: datetime = Field(
+        default_factory=get_shanghai_time, sa_type=DateTime(timezone=False)
+    )
     image: str
     tag: str
     client_ip: str
