@@ -93,7 +93,7 @@
 
 程序自动读取项目根目录 `.env`，已有环境变量优先。Web UI 始终使用 HTTP，不读取 TLS 证书。镜像代理通过 Uvicorn 的 [HTTPS 配置](https://www.uvicorn.org/settings/#https) 加载默认证书；只配置一个路径或文件不存在时拒绝启动。显式清空两个证书路径可在本地改用 HTTP。使用公开受信任证书通常无需 `insecure-registries`；使用内部 CA 或自签名证书时，需让 Docker 守护进程信任签发 CA（Linux 路径为 `/etc/docker/certs.d/mirror.aibety.cn:8443/ca.crt`）。证书更新后执行 `docker compose restart docker-hub-proxy` 重新加载。
 
-### 方式三：使用已发布的 Docker 镜像（无需克隆源码）
+### 方式三：快速部署（推荐）
 
 下面提供一份完整部署示例：Web UI 使用 HTTP 8000，镜像代理使用 HTTPS 8443，容器内部代理端口仍为 8443。示例域名 `mirror.aibety.cn` 请替换为自己的域名。镜像名称以 `qq510023514/docker-hub:latest` 为例，请使用实际发布的、包含当前 HTTPS 和双服务启动功能的镜像版本；无需配置 `build` 或安装 Python。
 
