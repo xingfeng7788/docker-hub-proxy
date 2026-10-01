@@ -252,7 +252,7 @@ docker pull mirror.aibety.cn:8443/library/redis:latest
     docker pull mirror.aibety.cn:8443/ghcr/owner/image:tag
     ```
 
-### 3. 局域网内共享配置
+### 3. 局域网内共用一套服务
 
 假设 `192.168.0.1` 部署了docker-hub-proxy 端口为8443
 
