@@ -91,8 +91,6 @@
     python -m app.main --service proxy
     ```
 
-程序自动读取项目根目录 `.env`，已有环境变量优先。Web UI 始终使用 HTTP，不读取 TLS 证书。镜像代理通过 Uvicorn 的 [HTTPS 配置](https://www.uvicorn.org/settings/#https) 加载默认证书；只配置一个路径或文件不存在时拒绝启动。显式清空两个证书路径可在本地改用 HTTP。使用公开受信任证书通常无需 `insecure-registries`；使用内部 CA 或自签名证书时，需让 Docker 守护进程信任签发 CA（Linux 路径为 `/etc/docker/certs.d/mirror.aibety.cn:8443/ca.crt`）。证书更新后执行 `docker compose restart docker-hub-proxy` 重新加载。
-
 ### 方式三：快速部署（推荐）
 
 #### 1.  docker-compose.yml
@@ -222,7 +220,6 @@ docker compose ps
 docker pull mirror.aibety.cn:8443/library/redis:latest
 ```
 
-后续更新镜像时执行 `docker compose pull`、`docker compose up -d`。替换证书文件后执行 `docker compose restart docker-hub-proxy`；自签名证书更新后，也需要同步更新客户端安装的 `ca.crt`。修改 `.env` 或 Compose 配置时，执行 `docker compose up -d --force-recreate` 重新创建容器。
 
 ## 📖 使用指南
 
