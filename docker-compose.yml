@@ -18,7 +18,7 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 8000
-      PROXY_URL: ${PROXY_URL:-https://mirror.aibety.com:8443}
+      PROXY_URL: ${PROXY_URL:-https://mirror.aibety.cn:8443}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3)"]
       interval: 10s
